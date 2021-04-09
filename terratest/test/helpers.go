@@ -88,6 +88,7 @@ func DoWithRetryWaitingForValueE(t *testing.T, actionDescription string, maxRetr
 	return output, retry.MaxRetriesExceeded{Description: actionDescription, MaxRetries: maxRetries}
 }
 
+
 func createGslbWithHealthyApp(t *testing.T, options *k8s.KubectlOptions, kubeResourcePath string, gslbName string, hostName string) {
 	k8s.KubectlApply(t, options, kubeResourcePath)
 
@@ -184,4 +185,40 @@ func assertGslbDeleted(t *testing.T, options *k8s.KubectlOptions, gslbName strin
 	require.NoError(t, err)
 
 	assert.Equal(t, deletionExpected, deletionActual)
+}
+
+
+// WaitForLocalGSLB waits until GSLB is ready
+func WaitForLocalGSLB(t *testing.T, host string, port int, expectedResult []string) (output []string, err error) {
+	const maxRetries = 100
+	const sleepBetweenRetries = time.Second * 1
+	var actionDescription = fmt.Sprintf("%s:%v", host, port)
+
+	if len(expectedResult) == 0 {
+		return
+	}
+	sort.Strings(expectedResult)
+	for i := 0; i <= maxRetries; i++ {
+
+		output, err =  Dig(t, "localhost", port, host)
+		if err != nil {
+			t.Logf("%s returned an error: %s. Sleeping for %s and will try again.",
+				actionDescription, err.Error(), sleepBetweenRetries)
+			return output, nil
+		}
+
+		sortedOutput := make([]string, len(output))
+		copy(sortedOutput,output)
+		sort.Strings(sortedOutput)
+
+		if reflect.DeepEqual(sortedOutput,expectedResult) {
+			return output, err
+		}
+
+		t.Logf("%s does not match expected result. Expected:(%s). Actual:(%s). Sleeping for %s and will try again.",
+			actionDescription, expectedResult, output, sleepBetweenRetries)
+		time.Sleep(sleepBetweenRetries)
+	}
+
+	return output, retry.MaxRetriesExceeded{Description: actionDescription, MaxRetries: maxRetries}
 }
